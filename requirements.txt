@@ -1,6 +1,5 @@
 flask
 flask-socketio
 eventlet
-gunicorn
-python-vlc
 yt-dlp
+gunicorn
