@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: music-player
+    name: dj-queue
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
