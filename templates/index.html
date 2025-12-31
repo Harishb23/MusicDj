@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DJ Queue - VLC Version</title>
+    <style>
+        body { font-family: Arial; background: #1a1a2e; color: white; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        header { text-align: center; margin-bottom: 30px; background: #16213e; padding: 20px; border-radius: 10px; }
+        h1 { color: #4ECDC4; }
+        .add-form { background: #0f3460; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+        input { width: 100%; padding: 12px; margin: 10px 0; border: none; border-radius: 5px; }
+        button { background: #FF6B6B; color: white; border: none; padding: 12px; border-radius: 5px; cursor: pointer; width: 100%; margin: 5px 0; }
+        button:hover { background: #FF5252; }
+        .skip-btn { background: #FFD166; color: #333; }
+        .stop-btn { background: #EF476F; }
+        .now-playing { background: #16213e; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 5px solid #4ECDC4; }
+        .queue-item { background: #0f3460; padding: 15px; margin: 10px 0; border-radius: 5px; display: flex; align-items: center; }
+        .queue-item .user { background: #FF6B6B; padding: 5px 10px; border-radius: 3px; margin-right: 10px; }
+        .notification { position: fixed; bottom: 20px; right: 20px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 5px; }
+    </style>
+    <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎵 DJ Queue - VLC Version</h1>
+            <p>Skip/Stop works instantly with VLC</p>
+        </header>
+        
+        <div class="add-form">
+            <h3>Add Song</h3>
+            <input type="text" id="username" placeholder="Your name">
+            <input type="text" id="url" placeholder="YouTube URL" autofocus>
+            <button onclick="addSong()">Add to Queue</button>
+        </div>
+        
+        <div class="now-playing">
+            <h3>Now Playing</h3>
+            <p id="currentSong">Nothing playing</p>
+            <button class="skip-btn" onclick="skipSong()" id="skipBtn">⏭️ Skip</button>
+            <button class="stop-btn" onclick="stopPlayback()" id="stopBtn">⏹️ Stop</button>
+        </div>
+        
+        <div class="queue">
+            <h3>Queue (<span id="queueCount">0</span>)</h3>
+            <div id="queueList">
+                <p style="text-align: center; padding: 20px; opacity: 0.7;">
+                    No songs in queue
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let username = '';
+        
+        // Socket events
+        socket.on('welcome', function(data) {
+            updateQueue(data.queue);
+            if (data.now_playing) updateNowPlaying(data.now_playing);
+        });
+        
+        socket.on('queue_update', function(queue) {
+            updateQueue(queue);
+        });
+        
+        socket.on('now_playing', function(song) {
+            updateNowPlaying(song);
+        });
+        
+        socket.on('new_song', function(data) {
+            showNotification(`${data.song.username} added a song`);
+        });
+        
+        socket.on('skipped', function(data) {
+            showNotification(`Song skipped`);
+            document.getElementById('skipBtn').disabled = false;
+            document.getElementById('currentSong').innerHTML = 'Nothing playing';
+        });
+        
+        socket.on('stopped', function(data) {
+            showNotification(`Playback stopped`);
+            document.getElementById('stopBtn').disabled = false;
+            document.getElementById('skipBtn').disabled = false;
+            document.getElementById('currentSong').innerHTML = 'Nothing playing';
+        });
+        
+        // Functions
+        function updateQueue(queue) {
+            document.getElementById('queueCount').textContent = queue.length;
+            
+            const list = document.getElementById('queueList');
+            if (queue.length === 0) {
+                list.innerHTML = '<p style="text-align: center; padding: 20px; opacity: 0.7;">No songs in queue</p>';
+                return;
+            }
+            
+            list.innerHTML = queue.map((song, i) => `
+                <div class="queue-item">
+                    <span style="opacity: 0.7;">#${i+1}</span>
+                    <div class="user" style="background-color: ${song.color}">
+                        ${song.username}
+                    </div>
+                    <div style="flex-grow: 1;">${song.title}</div>
+                    <div style="opacity: 0.7;">${song.added_time}</div>
+                </div>
+            `).join('');
+        }
+        
+        function updateNowPlaying(song) {
+            if (!song) {
+                document.getElementById('currentSong').innerHTML = 'Nothing playing';
+                document.getElementById('skipBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = true;
+                return;
+            }
+            
+            document.getElementById('currentSong').innerHTML = `
+                <strong>${song.title}</strong><br>
+                <small>Added by ${song.username} • Started ${song.start_time}</small>
+            `;
+            document.getElementById('skipBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = false;
+        }
+        
+        function addSong() {
+            const url = document.getElementById('url').value;
+            username = document.getElementById('username').value || 'Anonymous';
+            
+            if (!url) return alert('Enter a URL');
+            
+            fetch('/api/add', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({url: url, username: username})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('url').value = '';
+                    document.getElementById('url').focus();
+                }
+            })
+            .catch(err => alert('Error'));
+        }
+        
+        function skipSong() {
+            document.getElementById('skipBtn').disabled = true;
+            
+            fetch('/api/skip', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username: username || 'Someone'})
+            });
+        }
+        
+        function stopPlayback() {
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('skipBtn').disabled = true;
+            
+            fetch('/api/stop', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username: username || 'Someone'})
+            });
+        }
+        
+        function showNotification(msg) {
+            const note = document.createElement('div');
+            note.className = 'notification';
+            note.textContent = msg;
+            document.body.appendChild(note);
+            setTimeout(() => note.remove(), 3000);
+        }
+        
+        // Enter key to submit
+        document.getElementById('url').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') addSong();
+        });
+    </script>
+</body>
+</html>
